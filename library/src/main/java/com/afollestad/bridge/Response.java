@@ -124,18 +124,15 @@ public final class Response implements AsResults, Serializable {
     @Nullable
     public byte[] asBytes() {
         String encoding = contentEncoding();
-        if(encoding!=null && encoding.contains("gzip")){
+        if (encoding != null && encoding.contains("gzip")) {
             try {
                 return decompressGZIP(data);
-            }
-            catch (IOException e){
-                // GZIP decompression may fail
+            } catch (IOException e) {
+                // GZIP content might be corrupted
                 throw new RuntimeException(e);
             }
         }
-        else {
-            return data;
-        }
+        return data;
     }
 
     @Nullable
@@ -302,19 +299,20 @@ public final class Response implements AsResults, Serializable {
     }
 
     @Nullable
-    private static byte[] decompressGZIP(byte[] compressed) throws IOException {
-
+    private byte[] decompressGZIP(byte[] compressed) throws IOException {
         ByteArrayInputStream is = new ByteArrayInputStream(compressed);
         ByteArrayOutputStream os = new ByteArrayOutputStream();
         GZIPInputStream gis = new GZIPInputStream(is, BUFFER_SIZE_GZIP);
-
-        byte[] data = new byte[BUFFER_SIZE_GZIP];
-        int bytesRead;
-        while ((bytesRead = gis.read(data)) != -1) {
-            os.write(data, 0, bytesRead);
+        try {
+            byte[] data = new byte[BUFFER_SIZE_GZIP];
+            int bytesRead;
+            while ((bytesRead = gis.read(data)) != -1) {
+                os.write(data, 0, bytesRead);
+            }
+        } finally {
+            gis.close();
+            is.close();
         }
-        gis.close();
-        is.close();
 
         return os.toByteArray();
     }
