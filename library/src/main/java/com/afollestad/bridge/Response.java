@@ -17,18 +17,20 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Serializable;
-import java.io.UnsupportedEncodingException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.zip.GZIPInputStream;
 
 /**
  * @author Aidan Follestad (afollestad)
  */
 @SuppressWarnings({"WeakerAccess", "unused"})
 public final class Response implements AsResults, Serializable {
+
+    private final static int BUFFER_SIZE_GZIP = 32;
 
     private final String url;
     private final byte[] data;
@@ -102,6 +104,13 @@ public final class Response implements AsResults, Serializable {
         return contentType;
     }
 
+    @Nullable
+    public String contentEncoding() {
+        String contentEncoding = header("Content-Encoding");
+        if (contentEncoding == null) contentEncoding = header("content-encoding");
+        return contentEncoding;
+    }
+
     public boolean isSuccess() {
         //noinspection PointlessBooleanExpression
         boolean success = code == -1 || code >= 200 && code <= 303;
@@ -120,9 +129,15 @@ public final class Response implements AsResults, Serializable {
         try {
             final byte[] bytes = asBytes();
             if (bytes == null || bytes.length == 0) return null;
-            return new String(bytes, "UTF-8");
-        } catch (UnsupportedEncodingException e) {
-            // Should never happen
+            String encoding = contentEncoding();
+            if(encoding!=null && encoding.contains("gzip")){
+                return decompressGZIP(bytes);
+            }
+            else {
+                return new String(bytes, "UTF-8");
+            }
+        } catch (IOException e) {
+            // Might happen
             throw new RuntimeException(e);
         }
     }
@@ -275,5 +290,23 @@ public final class Response implements AsResults, Serializable {
                 String.format(Locale.US, "%d bytes", ((byte[]) suggested).length) :
                 suggested != null ? suggested.toString() : "(null)";
         return String.format(Locale.US, "%s, %d %s, %s", url, code, message, bodyDescriptor);
+    }
+
+    @Nullable
+    private static String decompressGZIP(byte[] compressed) throws IOException {
+
+        ByteArrayInputStream is = new ByteArrayInputStream(compressed);
+        GZIPInputStream gis = new GZIPInputStream(is, BUFFER_SIZE_GZIP);
+        StringBuilder string = new StringBuilder();
+
+        byte[] data = new byte[BUFFER_SIZE_GZIP];
+        int bytesRead;
+        while ((bytesRead = gis.read(data)) != -1) {
+            string.append(new String(data, 0, bytesRead));
+        }
+        gis.close();
+        is.close();
+
+        return string.toString();
     }
 }
