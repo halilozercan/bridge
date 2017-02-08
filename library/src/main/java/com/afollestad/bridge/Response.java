@@ -12,11 +12,13 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Serializable;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -121,7 +123,19 @@ public final class Response implements AsResults, Serializable {
 
     @Nullable
     public byte[] asBytes() {
-        return data;
+        String encoding = contentEncoding();
+        if(encoding!=null && encoding.contains("gzip")){
+            try {
+                return decompressGZIP(data);
+            }
+            catch (IOException e){
+                // GZIP decompression may fail
+                throw new RuntimeException(e);
+            }
+        }
+        else {
+            return data;
+        }
     }
 
     @Nullable
@@ -129,15 +143,10 @@ public final class Response implements AsResults, Serializable {
         try {
             final byte[] bytes = asBytes();
             if (bytes == null || bytes.length == 0) return null;
-            String encoding = contentEncoding();
-            if(encoding!=null && encoding.contains("gzip")){
-                return decompressGZIP(bytes);
-            }
-            else {
-                return new String(bytes, "UTF-8");
-            }
+            return new String(bytes, "UTF-8");
+
         } catch (IOException e) {
-            // Might happen
+            // This should never happend
             throw new RuntimeException(e);
         }
     }
@@ -293,20 +302,20 @@ public final class Response implements AsResults, Serializable {
     }
 
     @Nullable
-    private static String decompressGZIP(byte[] compressed) throws IOException {
+    private static byte[] decompressGZIP(byte[] compressed) throws IOException {
 
         ByteArrayInputStream is = new ByteArrayInputStream(compressed);
+        ByteArrayOutputStream os = new ByteArrayOutputStream();
         GZIPInputStream gis = new GZIPInputStream(is, BUFFER_SIZE_GZIP);
-        StringBuilder string = new StringBuilder();
 
         byte[] data = new byte[BUFFER_SIZE_GZIP];
         int bytesRead;
         while ((bytesRead = gis.read(data)) != -1) {
-            string.append(new String(data, 0, bytesRead));
+            os.write(data, 0, bytesRead);
         }
         gis.close();
         is.close();
 
-        return string.toString();
+        return os.toByteArray();
     }
 }
